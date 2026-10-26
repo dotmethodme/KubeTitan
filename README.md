@@ -17,6 +17,18 @@ straight to your cluster's API server and keeps everything on your machine.
 - **Keyboard first**: `Ctrl K` jumps anywhere, `Ctrl .` switches namespace,
   `Ctrl ,` switches context, `Ctrl 1`–`9` switch view.
 
+## Install
+
+```sh
+curl -fsSL https://kubetitan.com/install | sh
+```
+
+Downloads the latest release for Linux x86_64 or macOS arm64, checks it against
+the release's `SHA256SUMS`, and installs it to `/usr/local/bin` (or
+`~/.local/bin` if that would need sudo). `KT_VERSION=v0.1.0` pins a release,
+`KT_PREFIX=/opt/kt` installs elsewhere. The script is `install.sh` in this
+repository; `https://kubetitan.com/install` just redirects to it.
+
 ## Build from source
 
 Needs a Rust toolchain (1.90+) and a kubeconfig that already works with `kubectl`.
