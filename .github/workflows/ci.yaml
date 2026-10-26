@@ -1,8 +1,14 @@
 name: CI
 
-# Lives under app/ on purpose: in the monorepo this file is inert (GitHub only
-# reads .github/workflows at the repo root), and in the standalone app repo it is
-# the CI. The app travels with its own build, wherever its source lives.
+# Fast checks on everything, and nothing that ships.
+#
+# There is no release build here on purpose. `[profile.release]` sets
+# `lto = "thin"` and `codegen-units = 1`, which is the right trade for a binary
+# people download and the wrong one for a pull request: one codegen unit means no
+# parallel codegen, and the linked binary alone took over 13 minutes on the first
+# cold run, on top of the same dependencies being compiled a third time. A release
+# build belongs in the release workflow, which runs on a tag and can afford to be
+# slow.
 
 on:
   push:
@@ -20,7 +26,7 @@ permissions:
 
 jobs:
   check:
-    timeout-minutes: 25
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,15 +49,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+          # pull requests read the cache, they do not each write one
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Formatting
-        run: cargo fmt --check
+        run: cargo fmt --check --all
 
+      # clippy and test are separate steps so a failure names the culprit; they
+      # share one dependency build anyway
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Tests
-        run: cargo test
+        run: cargo test --locked
 
+      # after `cargo test` this costs seconds, and it catches a binary that does
+      # not link
       - name: Build
-        run: cargo build --release
+        run: cargo build --locked
