@@ -1,0 +1,160 @@
+name: Release
+
+# One flow, on every merge to main: check it, build it, tag it, publish it.
+#
+# - Pull requests run the checks only.
+# - A push to main runs the checks, then works out the next version from the
+#   conventional-commit messages since the last tag, builds that version, and
+#   publishes a GitHub release with the binary attached and notes grouped by
+#   commit type.
+# - Nothing to release (only chores, docs or CI since the last tag) means no tag:
+#   a release for every README typo is noise.
+#
+# The version bump is committed back with `[skip ci]`, which is what stops the
+# push from starting this workflow again.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# never cancel a run that is half-way through publishing a release
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: System libraries for egui/winit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libxcursor-dev libxi-dev libxrandr-dev \
+            libgl1-mesa-dev libwayland-dev pkg-config
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Formatting
+        run: cargo fmt --check --all
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+  release:
+    needs: check
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # the version and the notes come from the history since the last tag
+          fetch-depth: 0
+
+      - name: System libraries for egui/winit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libxcursor-dev libxi-dev libxrandr-dev \
+            libgl1-mesa-dev libwayland-dev pkg-config
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Work out the next version
+        id: next
+        run: |
+          current=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "current version: $current"
+          python3 .github/scripts/next-release.py --current "$current" --notes notes.md | tee out.txt
+          echo "version=$(sed -n 's/^version=//p' out.txt)" >> "$GITHUB_OUTPUT"
+          echo "bump=$(sed -n 's/^bump=//p' out.txt)" >> "$GITHUB_OUTPUT"
+          echo "--- notes ---"; cat notes.md
+
+      - name: Nothing to release
+        if: steps.next.outputs.version == ''
+        run: echo "no feat/fix/perf since the last tag, so no release this time"
+
+      - name: Build
+        if: steps.next.outputs.version != ''
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          # the tag is the source of truth for the version, so the binary agrees
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          cargo build --release
+
+      - name: Package
+        if: steps.next.outputs.version != ''
+        run: |
+          mkdir -p dist
+          cp target/release/kubetitan dist/kubetitan
+          cp LICENSE README.md dist/
+          # -f names the archive inside dist/ explicitly: with `-C dist -f …` the
+          # archive lands wherever tar opens it, which is not worth guessing
+          tar -C dist -czf "dist/kubetitan-${RUNNER_OS,,}-x86_64.tar.gz" kubetitan LICENSE README.md
+          rm -f dist/kubetitan dist/LICENSE dist/README.md
+          ( cd dist && sha256sum *.tar.gz > SHA256SUMS )
+          ls -l dist
+
+      - name: Commit the version bump
+        if: steps.next.outputs.version != ''
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          git config user.name "KubeTitan Release"
+          git config user.email "release@kubetitan.com"
+          git add Cargo.toml Cargo.lock
+          # [skip ci] keeps this push from starting the workflow again
+          git commit -m "chore(release): v$VERSION [skip ci]" || echo "nothing to commit"
+          git push
+
+      - name: Publish
+        if: steps.next.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists, uploading/replacing assets"
+            gh release upload "$tag" dist/*.tar.gz dist/SHA256SUMS --clobber
+          else
+            gh release create "$tag" dist/*.tar.gz dist/SHA256SUMS \
+              --title "KubeTitan $tag" \
+              --notes-file notes.md \
+              --target "$(git rev-parse HEAD)"
+          fi
+          echo "released $tag"
