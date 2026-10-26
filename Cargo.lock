@@ -2305,7 +2305,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kubetitan-mvp"
+name = "kubetitan"
 version = "0.1.0"
 dependencies = [
  "anyhow",

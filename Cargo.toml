@@ -1,5 +1,5 @@
 [package]
-name = "kubetitan-mvp"
+name = "kubetitan"
 version = "0.1.0"
 edition = "2024"
 description = "A native Kubernetes IDE"

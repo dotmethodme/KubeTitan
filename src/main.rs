@@ -89,7 +89,7 @@ fn main() -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "KubeTitan-RS",
+        "KubeTitan",
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
