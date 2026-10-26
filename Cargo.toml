@@ -1,0 +1,38 @@
+[package]
+name = "kubetitan-mvp"
+version = "0.1.0"
+edition = "2024"
+description = "A native Kubernetes IDE"
+repository = "https://github.com/dotmethodme/KubeTitan"
+license = "Apache-2.0"
+
+[dependencies]
+base64 = "0.22"
+anyhow = "1.0.104"
+eframe = "0.36.2"
+egui_extras = "0.36.2"
+futures = "0.3.34"
+http = "1"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+jiff = "0.2.38"
+k8s-openapi = { version = "0.28.0", features = ["latest"] }
+kube = { version = "4.2.0", features = ["runtime", "ws"] }
+log = "0.4.34"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+serde_yaml = "0.9"
+similar = "2"
+tokio = { version = "1.53.2", features = ["full"] }
+vt100 = "0.16.2"
+
+# A GUI binary carries its own code into memory, so keep it lean: thin LTO and a
+# single codegen unit cut the mapped text substantially. The dev profile keeps
+# line tables only, which is what a backtrace needs — full debug info is the
+# bulk of an unoptimised binary.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
