@@ -205,6 +205,12 @@ jobs:
         with:
           name: release-notes
 
+      - name: Rust toolchain
+        # needed only to keep Cargo.lock honest when the version is bumped
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-30
+        with:
+          toolchain: stable
+
       - name: Checksums
         run: |
           cd dist
@@ -220,6 +226,11 @@ jobs:
           git config user.name "KubeTitan Release"
           git config user.email "release@kubetitan.com"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          # Cargo.lock records the workspace package's own version, so bumping
+          # Cargo.toml alone leaves the lock stale and every later `--locked`
+          # check dies with "cannot update the lock file". `--workspace` touches
+          # only the members, so no dependency version moves.
+          cargo update --workspace
           git add Cargo.toml Cargo.lock
           # [skip ci] keeps this push from starting the workflow again
           git commit -m "chore(release): v$VERSION [skip ci]" || echo "nothing to commit"
