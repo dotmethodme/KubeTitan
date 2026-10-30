@@ -52,12 +52,18 @@ need tar
 
 # ---- which version ---------------------------------------------------------
 if [ "$VERSION" = "latest" ]; then
-  # /releases/latest redirects to the newest non-prerelease tag; following it and
-  # reading the final URL avoids parsing JSON without jq
-  resolved=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$API/repos/$REPO/releases/latest") \
-    || die "could not reach GitHub to find the latest release"
-  tag=$(printf '%s' "$resolved" | sed -n 's|.*/tag/||p')
-  [ -n "$tag" ] || die "could not work out the latest release tag (got: $resolved)"
+  # api.github.com/repos/<r>/releases/latest answers 200 with JSON and does not
+  # redirect, so reading a /tag/ URL off the API call can never work. The web
+  # URL is the one that 302s to /releases/tag/<tag>, it needs no jq, and it is
+  # not rate limited like the API. The JSON stays as a fallback for a mirror
+  # that only serves the API side.
+  resolved=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$DL/$REPO/releases/latest" 2>/dev/null || true)
+  tag=$(printf '%s\n' "$resolved" | sed -n 's|.*/tag/||p')
+  if [ -z "$tag" ]; then
+    json=$(curl -fsSL "$API/repos/$REPO/releases/latest" 2>/dev/null || true)
+    tag=$(printf '%s\n' "$json" | sed -n 's/^ *"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+  fi
+  [ -n "$tag" ] || die "could not work out the latest release tag (tried $DL/$REPO/releases/latest and $API/repos/$REPO/releases/latest); set KT_VERSION=vX.Y.Z to skip the lookup"
   VERSION="$tag"
 fi
 case "$VERSION" in
