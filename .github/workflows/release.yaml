@@ -116,8 +116,11 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux-x86_64
-          - os: macos-14
+          - os: macos-15
             platform: macos-aarch64
+            # plain `macos-15` is the arm64 image (`macos-15-intel` is x64), and
+            # macos-14 was retired on 2026-11-02: pinning a version beats
+            # `macos-latest`, which only moves after a brownout-free migration
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
